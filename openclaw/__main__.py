@@ -1,5 +1,10 @@
 ﻿import sys
+import io
 from openclaw.router.router import route, explain
+
+# Force UTF-8 output on Windows
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 def main():
     if len(sys.argv) < 3:

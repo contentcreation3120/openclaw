@@ -15,18 +15,24 @@ if (Test-Path $ollamaExe) {
     Write-Host "  Ollama: not found" -ForegroundColor Red
 }
 
-$lmsExe = "$env:LOCALAPPDATA\Programs\LM-Studio\LM Studio.exe"
-if (Test-Path $lmsExe) {
-    $running = Get-Process -Name "*LM Studio*" -ErrorAction SilentlyContinue
+$lmsPaths = @(
+    "$env:LOCALAPPDATA\Programs\LM-Studio\LM Studio.exe",
+    "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
+    "C:\Program Files\LM Studio\LM Studio.exe",
+    "$env:APPDATA\LM Studio\LM Studio.exe"
+)
+$lmsExe = $lmsPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($lmsExe) {
+    $running = Get-Process -Name "*LM*Studio*" -ErrorAction SilentlyContinue
     if (-not $running) {
         Start-Process -FilePath $lmsExe
         Start-Sleep 3
-        Write-Host "  LM Studio: STARTED (localhost:1234) -- load Devstral then Start Server" -ForegroundColor Green
+        Write-Host "  LM Studio: STARTED -- load Devstral then click Start Server" -ForegroundColor Green
     } else {
         Write-Host "  LM Studio: already running" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "  LM Studio: not found" -ForegroundColor Red
+    Write-Host "  LM Studio: not installed -- code prompts will fall back to Claude Haiku" -ForegroundColor Yellow
 }
 
 Write-Host "`nAll servers started. OpenClaw is ready." -ForegroundColor Cyan
