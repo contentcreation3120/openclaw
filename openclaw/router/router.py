@@ -9,11 +9,20 @@ tracker = CostTracker()
 _STRATEGY_WORDS = {"strategy","setup","trade","entry","stop","target","position","swing","intraday","day trade","day trading","swing trade","swing trading"}
 
 
-def route(prompt: str, system: str = "", max_tokens: int = 1536, task_type: str = None) -> str:
+_LONG_OUTPUT_TASKS = {"research", "auto_analysis", "long_context"}
+_DEFAULT_TOKENS    = 1536
+_RESEARCH_TOKENS   = 4096
+
+
+def route(prompt: str, system: str = "", max_tokens: int = 0, task_type: str = None) -> str:
     decision = classify(prompt)
     if task_type:
         decision.task_type = task_type   # caller override (e.g. auto_analysis)
     logger.info(f"Route: [{decision.task_type}] -> {decision.model} | {decision.reason}")
+
+    # Research and full-analysis tasks need more tokens
+    if max_tokens == 0:
+        max_tokens = _RESEARCH_TOKENS if decision.task_type in _LONG_OUTPUT_TASKS else _DEFAULT_TOKENS
 
     # For trading prompts: detect futures vs stocks and refine task_type
     if decision.task_type in ("trading", "signal"):

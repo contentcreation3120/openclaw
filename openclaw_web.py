@@ -254,7 +254,7 @@ EXAMPLES = [
     "write a Python function to calculate profit factor from a trade list",
 ]
 
-with gr.Blocks(title="OpenClaw", css=CSS) as demo:
+with gr.Blocks(title="OpenClaw") as demo:
 
     gr.Markdown(
         "# OPENCLAW\n"
@@ -366,4 +366,5 @@ if __name__ == "__main__":
         server_port=7860,
         inbrowser=True,
         share=False,
+        css=CSS,
     )

@@ -23,6 +23,10 @@ _COMMON_WORDS = {
     "OK","VS","RE","HR","PL","EU","UK","AU","CA","DAY","BUY","SELL",
     "GET","SET","ALL","NEW","NOW","OUT","OWN","HOW","WHY","PUT","ASK","ADD",
     "AUTO","ANALYSIS","SWING","TRADE","ENTRY","STOP","SIGNAL","PLAN","CODE",
+    "BULL","BEAR","LONG","SHORT","CALL","PUT","OTM","ITM","ATM","DTE",
+    "HIGH","LOW","OPEN","CLOSE","HOLD","RISK","GAIN","LOSS","NET","TAM",
+    "FULL","CASE","BASE","NOTE","BIAS","MOAT","TERM","TYPE","FORM","RATE",
+    "KEY","TOP","FIT","MAP","CAP","WAY","FEE","TAX","USE","ACT","AIM",
 }
 
 
