@@ -155,6 +155,146 @@ def fetch_news(symbol: str, n: int = 5) -> list[str]:
         return []
 
 
+def fetch_insider_trades(symbol: str, n: int = 8) -> list[dict]:
+    """Fetch recent insider buy/sell transactions."""
+    try:
+        tk = yf.Ticker(symbol)
+        df = tk.insider_transactions
+        if df is None or df.empty:
+            return []
+        result = []
+        for _, row in df.head(n).iterrows():
+            txn = str(row.get("Transaction", "") or "").upper()
+            action = "BUY" if any(w in txn for w in ("BUY","PURCHASE","ACQUISITION")) else "SELL"
+            shares = row.get("Shares", 0) or 0
+            value  = row.get("Value", 0) or 0
+            result.append({
+                "date":    str(row.get("Start Date", ""))[:10],
+                "insider": str(row.get("Insider", row.get("Filer Name", "Unknown"))),
+                "title":   str(row.get("Position", row.get("Filer Relation", ""))),
+                "action":  action,
+                "shares":  int(shares),
+                "value":   int(value),
+            })
+        return result
+    except Exception as e:
+        logger.warning(f"insider_trades: {symbol} failed — {e}")
+        return []
+
+
+def fetch_institutional_holders(symbol: str, n: int = 5) -> list[dict]:
+    """Fetch top institutional holders."""
+    try:
+        tk = yf.Ticker(symbol)
+        df = tk.institutional_holders
+        if df is None or df.empty:
+            return []
+        result = []
+        for _, row in df.head(n).iterrows():
+            pct = float(row.get("pctHeld", row.get("% Out", 0)) or 0)
+            result.append({
+                "holder": str(row.get("Holder", "")),
+                "shares": int(row.get("Shares", 0) or 0),
+                "value":  int(row.get("Value",  0) or 0),
+                "pct":    round(pct * 100, 2),   # pctHeld is decimal: 0.0737 → 7.37%
+            })
+        return result
+    except Exception as e:
+        logger.warning(f"institutional_holders: {symbol} failed — {e}")
+        return []
+
+
+def detect_chart_patterns(symbol: str) -> dict:
+    """Detect trend, MA position, candle pattern, bias from 3mo daily OHLC."""
+    try:
+        tk   = yf.Ticker(symbol)
+        hist = tk.history(period="3mo", interval="1d")
+        if hist.empty or len(hist) < 10:
+            return {}
+
+        closes = hist["Close"].values
+        highs  = hist["High"].values
+        lows   = hist["Low"].values
+        opens  = hist["Open"].values
+        n      = len(closes)
+
+        # Trend (last 20 candles)
+        c20 = closes[-min(20,n):]
+        if c20[-1] > c20[0] * 1.08:
+            trend = "Strong Uptrend"
+        elif c20[-1] > c20[0] * 1.02:
+            trend = "Uptrend"
+        elif c20[-1] < c20[0] * 0.92:
+            trend = "Strong Downtrend"
+        elif c20[-1] < c20[0] * 0.98:
+            trend = "Downtrend"
+        else:
+            trend = "Sideways / Consolidation"
+
+        # Moving averages
+        ma20  = round(float(sum(closes[-min(20,n):]) / min(20,n)), 2)
+        ma50  = round(float(sum(closes[-min(50,n):]) / min(50,n)), 2) if n >= 30 else None
+        ma200 = round(float(sum(closes[-min(200,n):]) / min(200,n)), 2) if n >= 100 else None
+
+        # Last candle pattern
+        o, c, h, l = opens[-1], closes[-1], highs[-1], lows[-1]
+        body  = abs(c - o)
+        rng   = h - l or 0.0001
+        upper = h - max(o, c)
+        lower = min(o, c) - l
+
+        if body < rng * 0.1:
+            candle = "Doji (indecision)"
+        elif c > o and lower > body * 2 and upper < body:
+            candle = "Hammer (bullish reversal)"
+        elif c < o and upper > body * 2 and lower < body:
+            candle = "Shooting Star (bearish reversal)"
+        elif c > o and body > rng * 0.7:
+            candle = "Strong Bullish Engulfing"
+        elif c < o and body > rng * 0.7:
+            candle = "Strong Bearish Engulfing"
+        else:
+            candle = "Mixed / No clear pattern"
+
+        # Bias scoring
+        bull = 0
+        bear = 0
+        if closes[-1] > ma20: bull += 1
+        else: bear += 1
+        if ma50  and closes[-1] > ma50:  bull += 1
+        elif ma50:  bear += 1
+        if ma200 and closes[-1] > ma200: bull += 2
+        elif ma200: bear += 2
+        if trend in ("Uptrend", "Strong Uptrend"):   bull += 2
+        elif trend in ("Downtrend", "Strong Downtrend"): bear += 2
+
+        # Higher highs / higher lows check (last 10 candles)
+        if n >= 10:
+            mid = n // 2
+            if highs[-5:].max() > highs[-10:-5].max() and lows[-5:].min() > lows[-10:-5].min():
+                bull += 1
+            elif highs[-5:].max() < highs[-10:-5].max() and lows[-5:].min() < lows[-10:-5].min():
+                bear += 1
+
+        bias = "LONG" if bull > bear else ("SHORT" if bear > bull else "NEUTRAL")
+
+        return {
+            "trend":         trend,
+            "bias":          bias,
+            "bull_signals":  bull,
+            "bear_signals":  bear,
+            "candle_pattern": candle,
+            "ma20":          ma20,
+            "ma50":          ma50,
+            "ma200":         ma200,
+            "recent_high":   round(float(highs[-10:].max()), 2),
+            "recent_low":    round(float(lows[-10:].min()),  2),
+        }
+    except Exception as e:
+        logger.warning(f"patterns: {symbol} failed — {e}")
+        return {}
+
+
 def build_market_context(text: str, task_type: str = None) -> str:
     tickers = extract_tickers(text)
     if not tickers:
@@ -201,6 +341,33 @@ def build_market_context(text: str, task_type: str = None) -> str:
                 block += "  --- Recent News ---\n"
                 for h in news:
                     block += f"  • {h}\n"
+
+        if task_type == "research" and not is_futures(sym):
+            # Chart patterns
+            pat = detect_chart_patterns(sym)
+            if pat:
+                block += (
+                    f"  --- Chart Patterns ---\n"
+                    f"  Trend     : {pat['trend']}\n"
+                    f"  Bias      : {pat['bias']} (bull signals: {pat['bull_signals']}, bear: {pat['bear_signals']})\n"
+                    f"  Last candle: {pat['candle_pattern']}\n"
+                    f"  MA20: ${pat['ma20']} | MA50: ${pat.get('ma50','N/A')} | MA200: ${pat.get('ma200','N/A')}\n"
+                    f"  Recent 10d High: ${pat['recent_high']} | Low: ${pat['recent_low']}\n"
+                )
+            # Insider trades
+            insiders = fetch_insider_trades(sym, 6)
+            if insiders:
+                block += "  --- Insider Transactions (recent) ---\n"
+                for t in insiders:
+                    val_str = f"${t['value']:,}" if t['value'] else "N/A"
+                    block += f"  {t['action']:4s} | {t['date']} | {t['insider']} ({t['title']}) | {t['shares']:,} shares | {val_str}\n"
+            # Institutional holders
+            insts = fetch_institutional_holders(sym, 5)
+            if insts:
+                block += "  --- Top Institutional Holders ---\n"
+                for h in insts:
+                    val_str = f"${h['value']/1e6:.0f}M" if h['value'] else "N/A"
+                    block += f"  {h['holder'][:35]:<35} {h['pct']:.2f}%  {val_str}\n"
 
         blocks.append(block)
 
