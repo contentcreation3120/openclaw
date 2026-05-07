@@ -5,7 +5,6 @@ Launch: python openclaw_web.py  |  Opens at http://localhost:7860
 import sys
 import os
 import re
-import socket
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 if BASE not in sys.path:
@@ -13,8 +12,9 @@ if BASE not in sys.path:
 
 from openclaw.router.router import route as openclaw_route
 from openclaw.router.classifier import classify
-from openclaw.market_data import extract_tickers, is_futures, fetch_quote
+from openclaw.market_data import extract_tickers, is_futures
 from openclaw.server.lifecycle import start_all, status as server_status
+from openclaw.tasks.prompts import get_prompt
 
 import gradio as gr
 
@@ -24,8 +24,14 @@ _srv = start_all()
 print(f"  Ollama   : {_srv['ollama']}")
 print(f"  LM Studio: {_srv['lmstudio']}")
 
-_DEEP_TASKS = {"trading","trading_futures","trading_stocks","trading_day","signal","research","auto_analysis","options"}
-_FOLLOWUPS  = {"yes","ok","sure","go ahead","continue","please","do it","yep","yeah","correct","exactly","proceed"}
+_DEEP_TASKS = {
+    "trading","trading_futures","trading_stocks","trading_day",
+    "signal","research","auto_analysis","options"
+}
+_FOLLOWUPS = {
+    "yes","ok","sure","go ahead","continue","please","do it",
+    "yep","yeah","correct","exactly","proceed",
+}
 _STRATEGY_WORDS = {
     "strategy","setup","trade","entry","stop","target","position",
     "swing","intraday","day trade","day trading","price","chart",
@@ -47,14 +53,15 @@ def chat(message: str, history: list) -> str:
     if not message.strip():
         return ""
 
-    msg_clean = message.strip().lower().rstrip("!.?")
-    enriched  = message
+    msg_clean   = message.strip().lower().rstrip("!.?")
+    enriched    = message
+    forced_task = None          # set when we need to override classifier
 
-    # ── Short follow-up (yes/ok/sure) → inject context from last exchange ────
+    # ── Short follow-up → inject last exchange as context ────────────────────
     words = message.strip().split()
     if len(words) <= 3 and msg_clean in _FOLLOWUPS and history:
-        last_user = history[-1][0] or ""
-        last_ai   = history[-1][1] or ""
+        last_user  = history[-1][0] or ""
+        last_ai    = history[-1][1] or ""
         last_clean = "\n".join(l for l in last_ai.splitlines() if not l.startswith(">"))
         enriched = (
             f"[Context from previous exchange]\n"
@@ -77,9 +84,11 @@ def chat(message: str, history: list) -> str:
         elif action == "day":
             enriched = f"day trade {sym} intraday — entry, SL1, SL2, TP1, TP2, exit rule before close"
         elif action in ("option", "options"):
-            enriched = f"options strategy for {sym} — best structure, strikes, expiry, IV rank context"
+            enriched    = f"options strategy for {sym} — best structure, strikes, expiry, IV rank context"
+            forced_task = "options"
         elif action == "research":
-            enriched = f"research {sym} — full fundamental analysis, catalysts, bull case, bear case, verdict"
+            enriched    = f"research {sym} — full fundamental analysis, catalysts, bull case, bear case, verdict"
+            forced_task = "research"
 
     # ── Auto-route: bare ticker with no action words ──────────────────────────
     if not drill:
@@ -90,24 +99,33 @@ def chat(message: str, history: list) -> str:
         if tickers and not has_act:
             sym = tickers[0]
             if is_futures(sym):
-                # Futures = always day trade with Apex — no menu needed
-                enriched = f"day trade {sym} futures — Apex-compliant entry, SL1, SL2, TP1, TP2, contracts"
+                enriched = (
+                    f"day trade {sym} futures — "
+                    f"Apex-compliant entry, SL1, SL2, TP1, TP2, contracts"
+                )
             else:
-                # Stock bare ticker → full auto-analysis in one shot
-                enriched = f"auto analysis {sym}"
+                enriched    = f"auto analysis {sym}"
+                forced_task = "auto_analysis"
 
-    # ── Classify and route ────────────────────────────────────────────────────
-    decision = classify(enriched)
-    header   = f"> **[{decision.task_type}]** routed to `{decision.model}` ({decision.backend})\n\n"
+    # ── Classify + optional task override ────────────────────────────────────
+    decision   = classify(enriched)
+    forced_sys = get_prompt(forced_task) if forced_task else ""
+    if forced_task:
+        decision.task_type = forced_task
+
+    header = (
+        f"> **[{decision.task_type}]** "
+        f"routed to `{decision.model}` ({decision.backend})\n\n"
+    )
 
     try:
-        response = openclaw_route(enriched)
+        response = openclaw_route(enriched, system=forced_sys)
         if not response:
             return header + "> *(model returned empty — Ollama may still be loading, try again)*"
 
         result = header + response
 
-        # Append drill-down shortcuts for trading/research responses
+        # Append drill-down hints for deep analysis responses
         tickers = extract_tickers(enriched)
         sym = next((t for t in tickers if not is_futures(t)), None)
         if decision.task_type in _DEEP_TASKS and sym and not drill:
@@ -122,7 +140,7 @@ def chat(message: str, history: list) -> str:
         return header + f"> **Error:** {e}"
 
 
-# ── UI layout ─────────────────────────────────────────────────────────────────
+# ── UI ────────────────────────────────────────────────────────────────────────
 CSS = """
 .gradio-container { max-width: 900px !important; margin: 0 auto !important; }
 footer { display: none !important; }
@@ -130,7 +148,10 @@ footer { display: none !important; }
 
 with gr.Blocks(title="OpenClaw", css=CSS) as demo:
 
-    gr.Markdown("# OPENCLAW\n**Personal AI trading assistant** — live data, local models, institutional analysis.")
+    gr.Markdown(
+        "# OPENCLAW\n"
+        "**Personal AI trading assistant** — live data, local models, institutional analysis."
+    )
 
     with gr.Row():
         status_box = gr.Textbox(
@@ -142,8 +163,8 @@ with gr.Blocks(title="OpenClaw", css=CSS) as demo:
     gr.Markdown("""
 | Type this | You get |
 |---|---|
-| `MSTR` | Full auto: live price + technicals + fundamentals + news + recommended play |
-| `MNQ` | Futures day trade setup (Apex rules) — no menu, instant |
+| `MSTR` | Full auto: price + technicals + fundamentals + news + recommended play |
+| `MNQ` | Futures day trade setup (Apex rules) — instant, no menu |
 | `swing MSTR` | Swing trade: entry zone, SL1/SL2, TP1/TP2, position size |
 | `day NVDA` | Day trade: intraday entry, stops, targets, exit rule |
 | `options AAPL` | Options strategy: structure, strikes, expiry, IV context |

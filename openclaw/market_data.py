@@ -18,9 +18,9 @@ _COMMON_WORDS = {
     "I","A","AT","OR","IN","ON","BE","IS","AM","DO","IF","MY","ME","UP","GO",
     "BY","US","IT","NO","SO","AS","HE","WE","TO","OF","AN","THE","AND","FOR",
     "RSI","EMA","SMA","ATR","IV","DTE","ETF","IPO","CEO","CFO","API","SQL",
-    "AI","ML","GPU","CPU","RAM","LLM","MNQ","NQ","ES","YM","RTY","CL","GC",
+    "AI","ML","GPU","CPU","RAM","LLM",
     "VWAP","MACD","OCO","OSO","TP","SL","EOD","ET","AM","PM","NY","VA",
-    "OK","VS","RE","HR","PL","US","EU","UK","AU","CA","DAY","BUY","SELL",
+    "OK","VS","RE","HR","PL","EU","UK","AU","CA","DAY","BUY","SELL",
     "GET","SET","ALL","NEW","NOW","OUT","OWN","HOW","WHY","PUT","ASK","ADD",
 }
 
@@ -137,7 +137,18 @@ def fetch_news(symbol: str, n: int = 5) -> list[str]:
     try:
         tk   = yf.Ticker(symbol)
         news = tk.news or []
-        return [item.get("title", "") for item in news[:n] if item.get("title")]
+        headlines = []
+        for item in news[:n]:
+            # yfinance returns dicts or nested content objects
+            title = (
+                item.get("title")
+                or item.get("headline")
+                or (item.get("content") or {}).get("title")
+                or ""
+            )
+            if title:
+                headlines.append(title)
+        return headlines
     except Exception as e:
         logger.warning(f"news: {symbol} failed — {e}")
         return []
