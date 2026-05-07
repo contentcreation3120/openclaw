@@ -9,8 +9,10 @@ tracker = CostTracker()
 _STRATEGY_WORDS = {"strategy","setup","trade","entry","stop","target","position","swing","intraday","day trade","day trading","swing trade","swing trading"}
 
 
-def route(prompt: str, system: str = "", max_tokens: int = 1536) -> str:
+def route(prompt: str, system: str = "", max_tokens: int = 1536, task_type: str = None) -> str:
     decision = classify(prompt)
+    if task_type:
+        decision.task_type = task_type   # caller override (e.g. auto_analysis)
     logger.info(f"Route: [{decision.task_type}] -> {decision.model} | {decision.reason}")
 
     # For trading prompts: detect futures vs stocks and refine task_type

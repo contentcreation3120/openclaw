@@ -91,6 +91,8 @@ def chat(message: str, history: list) -> str:
             forced_task = "research"
 
     # ── Auto-route: bare ticker with no action words ──────────────────────────
+    drill_sym = drill.group(2).upper() if drill else None   # sym for footer
+
     if not drill:
         p_lower  = enriched.lower()
         tickers  = extract_tickers(enriched)
@@ -106,6 +108,7 @@ def chat(message: str, history: list) -> str:
             else:
                 enriched    = f"auto analysis {sym}"
                 forced_task = "auto_analysis"
+                drill_sym   = sym               # remember original sym for footer
 
     # ── Classify + optional task override ────────────────────────────────────
     decision   = classify(enriched)
@@ -119,21 +122,23 @@ def chat(message: str, history: list) -> str:
     )
 
     try:
-        response = openclaw_route(enriched, system=forced_sys)
+        response = openclaw_route(enriched, system=forced_sys, task_type=forced_task)
         if not response:
             return header + "> *(model returned empty — Ollama may still be loading, try again)*"
 
         result = header + response
 
-        # Append drill-down hints for deep analysis responses
-        tickers = extract_tickers(enriched)
-        sym = next((t for t in tickers if not is_futures(t)), None)
-        if decision.task_type in _DEEP_TASKS and sym and not drill:
-            result += (
+        # Append drill-down footer (only for stock tickers, only when not already a drill-down)
+        if decision.task_type in _DEEP_TASKS and drill_sym and not is_futures(drill_sym):
+            footer = (
                 f"\n\n---\n*Drill down: "
-                f"**swing {sym}** · **day {sym}** · "
-                f"**options {sym}** · **research {sym}***"
+                f"**swing {drill_sym}** · **day {drill_sym}** · "
+                f"**options {drill_sym}** · **research {drill_sym}***"
             )
+            # Avoid duplicate if model already appended a drill-down line
+            if f"swing {drill_sym}" not in result:
+                result += footer
+
         return result
 
     except Exception as e:

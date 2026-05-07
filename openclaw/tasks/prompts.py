@@ -33,9 +33,7 @@ SKILLS = {
         "**RECOMMENDED PLAY**\n"
         "- Setup: [swing / day trade / avoid — one-line reason]\n"
         "- Entry zone: $X – $X\n"
-        "- SL: $X | TP1: $X | TP2: $X\n\n"
-        "---\n"
-        "*Drill down: type **swing [TICKER]** · **day [TICKER]** · **options [TICKER]** · **research [TICKER]***"
+        "- SL: $X | TP1: $X | TP2: $X\n"
     ),
 
     "trading_futures": BASE + (

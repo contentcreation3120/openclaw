@@ -22,6 +22,7 @@ _COMMON_WORDS = {
     "VWAP","MACD","OCO","OSO","TP","SL","EOD","ET","AM","PM","NY","VA",
     "OK","VS","RE","HR","PL","EU","UK","AU","CA","DAY","BUY","SELL",
     "GET","SET","ALL","NEW","NOW","OUT","OWN","HOW","WHY","PUT","ASK","ADD",
+    "AUTO","ANALYSIS","SWING","TRADE","ENTRY","STOP","SIGNAL","PLAN","CODE",
 }
 
 
