@@ -10,12 +10,11 @@ def complete(prompt: str, model: str = SONNET, system: str = "", max_tokens: int
     messages = [{"role": "user", "content": prompt}]
     kwargs = dict(model=model, max_tokens=max_tokens, messages=messages)
     if system:
-        kwargs["system"] = [{"type":"text","text":system,"cache_control":{"type":"ephemeral"}}]
-        kwargs["betas"] = ["prompt-caching-2024-07-31"]
+        kwargs["system"] = system
     try:
         r = _client.messages.create(**kwargs)
         u = r.usage
-        logger.info(f"Claude {model} | in={u.input_tokens} out={u.output_tokens} | cache_read={getattr(u,'cache_read_input_tokens',0)}")
+        logger.info(f"Claude {model} | in={u.input_tokens} out={u.output_tokens}")
         return r.content[0].text
     except Exception as e:
         raise RuntimeError(f"Claude ({model}): {e}") from e

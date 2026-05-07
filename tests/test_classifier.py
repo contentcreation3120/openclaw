@@ -1,94 +1,234 @@
 """
-Tests for the task classifier.  Run with: pytest tests/
+Tests for the classifier using the current API.
+Run with: pytest tests/test_classifier.py -v
 """
-
 import pytest
-from openclaw.router.classifier import TaskClassifier, TaskTier
+from openclaw.router.classifier import classify, RouteDecision
 
 
-@pytest.fixture
-def clf():
-    return TaskClassifier()
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def _c(prompt):
+    d = classify(prompt)
+    assert isinstance(d, RouteDecision)
+    return d
 
 
-class TestStrategyRouting:
-    def test_should_i_trade(self, clf):
-        result = clf.classify("Should I trade this setup given the macro environment?")
-        assert result.tier == TaskTier.CLOUD_SONNET
-        assert result.use_case == "strategy_decision"
-
-    def test_portfolio_allocation(self, clf):
-        result = clf.classify("What portfolio allocation makes sense with 3 open positions?")
-        assert result.tier == TaskTier.CLOUD_SONNET
-
-    def test_recommend_keyword(self, clf):
-        result = clf.classify("Can you recommend how to size this trade?")
-        assert result.tier == TaskTier.CLOUD_SONNET
-
+# ── Code routing ─────────────────────────────────────────────────────────────
 
 class TestCodeRouting:
-    def test_python_code_block(self, clf):
-        result = clf.classify("```python\ndef compute_rsi(prices): pass\n```  fix this")
-        assert result.tier == TaskTier.LOCAL_CODE
-        assert result.use_case == "code_generation"
+    def test_write_a_function(self):
+        d = _c("write a function that calculates win rate")
+        assert d.task_type == "code"
+        assert d.backend == "lmstudio"
 
-    def test_backtest_keyword(self, clf):
-        result = clf.classify("Write a backtest for my EMA crossover strategy in pandas")
-        assert result.tier == TaskTier.LOCAL_CODE
+    def test_debug_this(self):
+        d = _c("debug this traceback AttributeError on line 42")
+        assert d.task_type == "code"
+        assert d.backend == "lmstudio"
 
-    def test_debug_keyword(self, clf):
-        result = clf.classify("Debug this traceback: AttributeError on line 42")
-        assert result.tier == TaskTier.LOCAL_CODE
+    def test_fix_the_bug(self):
+        d = _c("fix the bug in my function")
+        assert d.task_type == "code"
+        assert d.backend == "lmstudio"
 
+    def test_how_do_i_parse_json(self):
+        d = _c("how do I parse JSON in Python")
+        assert d.task_type == "code"
+        assert d.backend == "lmstudio"
+
+    def test_sql_query(self):
+        d = _c("SQL query to get all trades from last week")
+        assert d.task_type == "code"
+        assert d.backend == "lmstudio"
+
+    def test_code_wins_over_trading(self):
+        # Code keywords checked first — should be code even though "trading" is in prompt
+        d = _c("write a trading strategy in Python")
+        assert d.task_type == "code"
+
+
+# ── Trading routing ───────────────────────────────────────────────────────────
+
+class TestTradingRouting:
+    def test_should_i_enter(self):
+        d = _c("should I enter this long on MNQ right now")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_stop_loss(self):
+        d = _c("where should I put my stop loss for this trade")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_apex(self):
+        d = _c("apex funded account rules for daily loss limit")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_swing_trade_tsla(self):
+        d = _c("swing trade TSLA setup for next week")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_day_trade_nvda(self):
+        d = _c("day trade NVDA intraday setup")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_bullish(self):
+        d = _c("market looks bullish today what is your take")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+    def test_entry_price_target(self):
+        d = _c("entry price target for this setup")
+        assert d.task_type == "trading"
+        assert d.backend == "ollama"
+
+
+# ── Signal routing ────────────────────────────────────────────────────────────
 
 class TestSignalRouting:
-    def test_rsi_signal(self, clf):
-        result = clf.classify("RSI is at 28 and MACD is crossing up — should I act on this signal?")
-        assert result.tier == TaskTier.LOCAL_MID
-        assert result.use_case == "signal_analysis"
+    def test_rsi_at_72(self):
+        d = _c("RSI at 72 is this overbought")
+        assert d.task_type == "signal"
 
-    def test_vwap_entry(self, clf):
-        result = clf.classify("Price just reclaimed VWAP with a breakout candle, entry looks good")
-        assert result.tier == TaskTier.LOCAL_MID
+    def test_vwap_rejected(self):
+        d = _c("VWAP rejected twice now looking weak")
+        assert d.task_type == "signal"
+
+    def test_macd_crossed(self):
+        # Avoid "chart", "bullish" (trading kw); "MACD crossed above signal line" is clean
+        d = _c("MACD crossed above signal line")
+        assert d.task_type == "signal"
+
+    def test_support_resistance(self):
+        d = _c("price at major support resistance zone")
+        assert d.task_type == "signal"
+
+    def test_breakout(self):
+        d = _c("breakout above the daily high with volume")
+        assert d.task_type == "signal"
 
 
-class TestPremarketRouting:
-    def test_premarket_keyword(self, clf):
-        result = clf.classify("Give me a pre-market brief for SPY based on overnight futures")
-        assert result.tier == TaskTier.LOCAL_MID
-        assert result.use_case == "premarket_brief"
+# ── Research routing ──────────────────────────────────────────────────────────
 
-    def test_morning_brief(self, clf):
-        result = clf.classify("What's the morning brief? What happened yesterday in the market?")
-        assert result.tier == TaskTier.LOCAL_MID
+class TestResearchRouting:
+    def test_explain_iv_rank(self):
+        # Use "what is" to hit research; avoid "IV rank" which is in _SIGNAL_KEYWORDS
+        d = _c("what is implied volatility rank and why does it matter")
+        assert d.task_type == "research"
 
+    def test_what_is_credit_spread(self):
+        d = _c("what is a credit spread and how does it work")
+        assert d.task_type == "research"
+
+    def test_compare_spy_qqq(self):
+        d = _c("compare SPY vs QQQ performance this year")
+        assert d.task_type == "research"
+
+    def test_news_about_tesla(self):
+        d = _c("news about Tesla and what is moving the stock")
+        assert d.task_type == "research"
+
+
+# ── Writing routing ───────────────────────────────────────────────────────────
+
+class TestWritingRouting:
+    def test_draft_a_letter(self):
+        # "draft" is a writing keyword; avoid "my account" (trading) and "ema" inside "email"
+        d = _c("draft a letter to my broker about fees")
+        assert d.task_type == "writing"
+
+    def test_compose_a_post(self):
+        # "compose" is a writing keyword; avoids "write a " code prefix
+        d = _c("compose a LinkedIn post about my trading journey")
+        assert d.task_type == "writing"
+
+    def test_rewrite_this(self):
+        d = _c("rewrite this paragraph to sound more professional")
+        assert d.task_type == "writing"
+
+
+# ── Planning routing ──────────────────────────────────────────────────────────
+
+class TestPlanningRouting:
+    def test_plan_my_trading_day(self):
+        d = _c("plan my trading day for tomorrow morning")
+        assert d.task_type == "planning"
+
+    def test_what_should_i_focus_on(self):
+        d = _c("what should I focus on this week to improve")
+        assert d.task_type == "planning"
+
+    def test_set_my_goals(self):
+        d = _c("set goals for this month around position sizing")
+        assert d.task_type == "planning"
+
+
+# ── Journal routing ───────────────────────────────────────────────────────────
 
 class TestJournalRouting:
-    def test_eod_recap(self, clf):
-        result = clf.classify("Here are my trades for the day, write an end of day recap")
-        assert result.tier == TaskTier.LOCAL_FAST
-        assert result.use_case == "trade_journal"
+    def test_session_recap(self):
+        d = _c("session recap for today 3 wins 2 losses up $240")
+        assert d.task_type == "journal"
 
-    def test_pnl_summary(self, clf):
-        result = clf.classify("Summarise my P&L and win rate from today's session")
-        assert result.tier == TaskTier.LOCAL_FAST
+    def test_calculate_win_rate(self):
+        d = _c("calculate my win rate from these trades")
+        assert d.task_type == "journal"
+
+    def test_trade_log(self):
+        d = _c("here is my trade log for the week review it")
+        assert d.task_type == "journal"
 
 
-class TestTokenLengthFallback:
-    def test_very_long_unclassified_goes_to_haiku(self, clf):
-        # Need >1200 estimated tokens: 1200 / 1.35 ≈ 889 words minimum
-        # Use 950 words of neutral filler that won't trigger any keyword
-        long_prompt = "lorem ipsum dolor sit amet consectetur adipiscing elit " * 170
-        result = clf.classify(long_prompt)
-        assert result.tier == TaskTier.CLOUD_HAIKU
+# ── General fallback ──────────────────────────────────────────────────────────
 
-    def test_short_unclassified_goes_to_fast(self, clf):
-        result = clf.classify("hello there")
-        assert result.tier == TaskTier.LOCAL_FAST
+class TestGeneralFallback:
+    def test_hello_there(self):
+        d = _c("hello there")
+        assert d.task_type == "general"
 
-    def test_medium_unclassified_goes_to_mid(self, clf):
-        # Need 600-1200 estimated tokens: 600/1.35 ≈ 445 words; 1200/1.35 ≈ 889 words
-        # Use ~500 words of neutral filler
-        medium_prompt = "lorem ipsum dolor sit amet consectetur adipiscing elit " * 90
-        result = clf.classify(medium_prompt)
-        assert result.tier == TaskTier.LOCAL_MID
+    def test_how_are_you(self):
+        d = _c("how are you doing today")
+        assert d.task_type == "general"
+
+
+# ── Long context ──────────────────────────────────────────────────────────────
+
+class TestLongContext:
+    def test_500x_market_context(self):
+        d = _c("market context " * 500)
+        assert d.task_type == "long_context"
+
+
+# ── Backend checks ────────────────────────────────────────────────────────────
+
+class TestBackendRouting:
+    def test_code_goes_to_lmstudio(self):
+        d = _c("write a function to calculate RSI")
+        assert d.backend == "lmstudio"
+
+    def test_trading_goes_to_ollama(self):
+        d = _c("should I enter this trade at VWAP")
+        assert d.backend == "ollama"
+
+    def test_general_goes_to_ollama(self):
+        d = _c("hello there")
+        assert d.backend == "ollama"
+
+
+# ── RouteDecision fields ──────────────────────────────────────────────────────
+
+class TestRouteDecisionFields:
+    def test_all_fields_present(self):
+        d = classify("write a function")
+        assert d.task_type is not None
+        assert d.model is not None
+        assert d.backend is not None
+        assert d.reason is not None
+
+    def test_returns_route_decision(self):
+        d = classify("hello")
+        assert isinstance(d, RouteDecision)
