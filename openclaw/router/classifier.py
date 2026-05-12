@@ -1,4 +1,8 @@
 from dataclasses import dataclass
+from openclaw.config import settings
+
+_MODEL  = settings.local_model   # hermes3 (or whatever LOCAL_MODEL is set to)
+_BACK   = "ollama"
 
 @dataclass
 class RouteDecision:
@@ -65,24 +69,27 @@ _JOURNAL_KEYWORDS = {
 def classify(prompt: str) -> RouteDecision:
     p = prompt.lower()
 
+    # Code goes to LM Studio (Devstral) if available, else hermes3
     if _any(p, _CODE_KEYWORDS):
-        return RouteDecision("code",     "devstral-small-2-24b-instruct-2512", "lmstudio", "Code -> Devstral 24B")
-    if _any(p, _TRADING_KEYWORDS):
-        return RouteDecision("trading",  "nemotron-3-nano:30b", "ollama", "Trading -> Nemotron 30B")
-    if _any(p, _SIGNAL_KEYWORDS):
-        return RouteDecision("signal",   "nemotron-3-nano:30b", "ollama", "Signal -> Nemotron 30B")
-    if _any(p, _RESEARCH_KEYWORDS):
-        return RouteDecision("research", "nemotron-3-nano:30b", "ollama", "Research -> Nemotron 30B")
-    if _any(p, _WRITING_KEYWORDS):
-        return RouteDecision("writing",  "gpt-oss:20b", "ollama", "Writing -> GPT-OSS 20B")
-    if _any(p, _PLANNING_KEYWORDS):
-        return RouteDecision("planning", "gpt-oss:20b", "ollama", "Planning -> GPT-OSS 20B")
-    if _any(p, _JOURNAL_KEYWORDS):
-        return RouteDecision("journal",  "gpt-oss:20b", "ollama", "Journal -> GPT-OSS 20B")
-    if len(prompt.split()) > 400:
-        return RouteDecision("long_context", "nemotron-3-nano:30b", "ollama", "Long -> Nemotron 30B")
+        return RouteDecision("code", "devstral-small-2-24b-instruct-2512", "lmstudio", f"Code -> Devstral (LM Studio)")
 
-    return RouteDecision("general", "gpt-oss:20b", "ollama", "General -> GPT-OSS 20B")
+    # All other tasks → hermes3 via Ollama, Claude Haiku fallback
+    if _any(p, _TRADING_KEYWORDS):
+        return RouteDecision("trading",  _MODEL, _BACK, f"Trading -> {_MODEL}")
+    if _any(p, _SIGNAL_KEYWORDS):
+        return RouteDecision("signal",   _MODEL, _BACK, f"Signal -> {_MODEL}")
+    if _any(p, _RESEARCH_KEYWORDS):
+        return RouteDecision("research", _MODEL, _BACK, f"Research -> {_MODEL}")
+    if _any(p, _WRITING_KEYWORDS):
+        return RouteDecision("writing",  _MODEL, _BACK, f"Writing -> {_MODEL}")
+    if _any(p, _PLANNING_KEYWORDS):
+        return RouteDecision("planning", _MODEL, _BACK, f"Planning -> {_MODEL}")
+    if _any(p, _JOURNAL_KEYWORDS):
+        return RouteDecision("journal",  _MODEL, _BACK, f"Journal -> {_MODEL}")
+    if len(prompt.split()) > 400:
+        return RouteDecision("long_context", _MODEL, _BACK, f"Long -> {_MODEL}")
+
+    return RouteDecision("general", _MODEL, _BACK, f"General -> {_MODEL}")
 
 
 def _any(text: str, keywords: set) -> bool:

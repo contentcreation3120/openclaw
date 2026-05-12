@@ -13,16 +13,21 @@ if BASE not in sys.path:
 from openclaw.router.router import route as openclaw_route
 from openclaw.router.classifier import classify
 from openclaw.market_data import extract_tickers, is_futures
-from openclaw.server.lifecycle import start_all, status as server_status
+from openclaw.server.lifecycle import start_all, status as server_status, ensure_model
 from openclaw.tasks.prompts import get_prompt
+from openclaw.config import settings
 
 import gradio as gr
 
-# ── Auto-start local servers on launch ───────────────────────────────────────
+# ── Auto-start local servers + ensure primary model is installed ──────────────
 print("\n  OpenClaw — starting local AI servers...")
 _srv = start_all()
 print(f"  Ollama   : {_srv['ollama']}")
 print(f"  LM Studio: {_srv['lmstudio']}")
+
+print(f"\n  Checking primary model: {settings.local_model}")
+_pull = ensure_model(settings.local_model, on_progress=lambda l: print(f"  {l}"))
+print(f"  Model status: {_pull}\n")
 
 _DEEP_TASKS = {
     "trading","trading_futures","trading_stocks","trading_day",
@@ -269,16 +274,17 @@ with gr.Blocks(title="OpenClaw") as demo:
         gr.Button("Refresh", scale=1, size="sm").click(get_status, outputs=status_box)
 
     gr.Markdown("""
-| Type this | You get |
-|---|---|
-| `MSTR` | Full auto: price + technicals + fundamentals + news + recommended play |
-| `MNQ` | Futures day trade setup (Apex rules) — instant, no menu |
-| `swing MSTR` | Swing trade: entry zone, SL1/SL2, TP1/TP2, position size |
-| `day NVDA` | Day trade: intraday entry, stops, targets, exit rule |
-| `options AAPL` | Options strategy: structure, strikes, expiry, IV context |
-| `research TSLA` | Fundamental deep-dive: bull/bear case, catalysts, verdict |
-| `plan my trading day` | Time-blocked plan around market hours |
-| `session recap: 3W 2L +$240` | Journal with win rate, avg R, lessons |
+| Type this | You get | Model |
+|---|---|---|
+| `MSTR` | Full auto: price + technicals + fundamentals + news + play | Hermes3 (local) |
+| `MNQ` | Futures day trade setup (Apex rules) — instant, no menu | Hermes3 (local) |
+| `swing MSTR` | Swing trade: entry zone, SL1/SL2, TP1/TP2, position size | Hermes3 (local) |
+| `day NVDA` | Day trade: intraday entry, stops, targets, exit rule | Hermes3 (local) |
+| `options AAPL` | Options strategy: structure, strikes, expiry, IV context | Hermes3 (local) |
+| `research TSLA` | Institutional deep-dive: patterns, insiders, 15yr thesis | Hermes3 (local) |
+| `plan my trading day` | Time-blocked plan around market hours | Hermes3 (local) |
+| `write a Python function` | Code | Devstral (LM Studio) |
+| *Ollama offline* | Any request | Claude API (auto fallback) |
 """)
 
     # ── State ────────────────────────────────────────────────────────────────

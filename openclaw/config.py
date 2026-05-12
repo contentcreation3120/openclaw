@@ -7,6 +7,10 @@ class _Settings:
     # API keys
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
 
+    # Local model — primary for all tasks via Ollama
+    # Override with LOCAL_MODEL env var (e.g. hermes3:70b)
+    local_model: str = os.getenv("LOCAL_MODEL", "hermes3")
+
     # User trading profile — used in prompts for position sizing
     broker:           str   = os.getenv("BROKER",           "Apex Trader Funding")
     account_size:     float = float(os.getenv("ACCOUNT_SIZE",    "50000"))
